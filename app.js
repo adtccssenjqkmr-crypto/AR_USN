@@ -72,10 +72,12 @@ class VisualArrow {
 
         const side = state.settings.neglectSide;
         
-        // Decelerated speed scales:
-        // Level 1: 0.15px/f, 2: 0.5px/f, 3: 0.85px/f, 4: 1.2px/f, 5: 1.5px/f
-        // Extremely smooth and slow movement for patient visual tracking
-        const step = (0.15 + (speedScale - 1) * 0.35);
+        // Speed adjustment requested by user:
+        // Set new "極遅" (1) to match the previous v3 "速い" (1.2 px/f).
+        // Set new "極速" (5) to match twice the previous v3 "極速" (1.5 * 2 = 3.0 px/f).
+        // Interpolated steps:
+        // Level 1: 1.2px/f, 2: 1.65px/f, 3: 2.1px/f, 4: 2.55px/f, 5: 3.0px/f
+        const step = (1.2 + (speedScale - 1) * 0.45);
 
         if (side === 'left') {
             this.x -= step;
@@ -119,6 +121,7 @@ const elements = {
     controlPanel: document.getElementById('control-panel'),
     cameraToggleBtn: document.getElementById('camera-toggle-btn'),
     resetSettingsBtn: document.getElementById('reset-settings-btn'),
+    fullscreenBtn: document.getElementById('fullscreen-btn'),
     cameraError: document.getElementById('camera-error'),
     errorMessage: document.getElementById('error-message'),
     retryCameraBtn: document.getElementById('retry-camera-btn'),
@@ -188,6 +191,19 @@ function setupEventListeners() {
         } else {
             startCamera();
         }
+    });
+
+    // Fullscreen Toggle
+    elements.fullscreenBtn.addEventListener('click', () => {
+        toggleFullscreen();
+    });
+
+    // Listen to native fullscreen changes to update UI state
+    document.addEventListener('fullscreenchange', () => {
+        updateFullscreenButtonUI();
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+        updateFullscreenButtonUI();
     });
 
     // Retry Camera
@@ -318,6 +334,41 @@ function toggleSectionActive(sectionId, isActive) {
     }
 }
 
+// --- Fullscreen Toggle Logic ---
+function toggleFullscreen() {
+    const docEl = document.documentElement;
+    const isFull = document.fullscreenElement || document.webkitFullscreenElement;
+
+    if (!isFull) {
+        // Request fullscreen
+        if (docEl.requestFullscreen) {
+            docEl.requestFullscreen().catch(err => console.warn(err));
+        } else if (docEl.webkitRequestFullscreen) { /* iOS / Safari support */
+            docEl.webkitRequestFullscreen();
+        }
+    } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
+}
+
+function updateFullscreenButtonUI() {
+    const isFull = document.fullscreenElement || document.webkitFullscreenElement;
+    if (isFull) {
+        elements.fullscreenBtn.textContent = '解除';
+        elements.fullscreenBtn.classList.remove('btn-secondary');
+        elements.fullscreenBtn.classList.add('btn-primary');
+    } else {
+        elements.fullscreenBtn.textContent = '全画面';
+        elements.fullscreenBtn.classList.remove('btn-primary');
+        elements.fullscreenBtn.classList.add('btn-secondary');
+    }
+}
+
 // --- Double Tap Trigger implementation ---
 function setupDoubleTapTrigger() {
     let lastTap = 0;
@@ -421,10 +472,8 @@ async function enumerateCameras() {
         // If a specific wide-angle ID is found, store it as standard target for the "Auto" choice
         if (autoSelectId) {
             state.selectedDeviceId = autoSelectId;
-            // Select it in dropdown explicitly
             elements.cameraSelect.value = autoSelectId;
         } else {
-            // Keep default empty value (environment fallback)
             state.selectedDeviceId = "";
             elements.cameraSelect.value = "";
         }
@@ -439,10 +488,6 @@ async function startCamera() {
     elements.cameraToggleBtn.textContent = '接続中...';
     elements.cameraToggleBtn.disabled = true;
 
-    // iOS and Android compatibility tuning:
-    // 1. Avoid using "exact" constraint for device ID. Use "ideal" to prevent strict OverconstrainedError.
-    // 2. Fallback facingMode to 'environment' if device ID is not selected.
-    // 3. Relax resolution settings. Use 1280x720 ideal. Subcameras (wide angles) sometimes fail at 1080p.
     const constraints = {
         video: {
             deviceId: state.selectedDeviceId ? { ideal: state.selectedDeviceId } : undefined,
@@ -458,7 +503,6 @@ async function startCamera() {
             state.videoStream.getTracks().forEach(track => track.stop());
         }
 
-        // Explicitly set muted & playsinline properties on HTML element
         elements.video.muted = true;
         elements.video.setAttribute('autoplay', 'true');
         elements.video.setAttribute('playsinline', 'true');
@@ -467,7 +511,6 @@ async function startCamera() {
         state.videoStream = stream;
         elements.video.srcObject = stream;
         
-        // Fallback safety triggers: play video if events are slow to fire
         let isStarted = false;
         const triggerPlay = () => {
             if (isStarted) return;
@@ -485,18 +528,15 @@ async function startCamera() {
             });
         };
 
-        // Standard event pipeline
         elements.video.onloadedmetadata = triggerPlay;
         elements.video.onplaying = triggerPlay;
         elements.video.oncanplay = triggerPlay;
 
-        // Force trigger after 1.5s in case metadata loaded event fails on some browsers
         setTimeout(triggerPlay, 1500);
 
     } catch (error) {
         console.error('Camera initialization failed:', error);
         
-        // Secondary Fallback: If device ID constraint failed, try again without any device ID constraints
         if (state.selectedDeviceId) {
             console.log('Retrying camera without device constraints...');
             state.selectedDeviceId = "";
@@ -578,11 +618,9 @@ function drawARFrame() {
     const vHeight = video.videoHeight;
     if (vWidth === 0 || vHeight === 0) return;
     
-    // Define the dimensions of a single screen (split or full)
     const targetWidth = state.activeModes.arSplit ? cWidth / 2 : cWidth;
     const targetHeight = cHeight;
     
-    // Render on offscreen canvas first
     oCtx.clearRect(0, 0, targetWidth, targetHeight);
 
     // 1. Render Camera Stream (Cover Fit / Perspective Shift)
@@ -624,7 +662,6 @@ function drawARFrame() {
     const side = state.settings.neglectSide;
 
     // A: Solid Darkening Overlay
-    // NOTE: Darken the healthy side (opposite to neglect side)
     if (state.activeModes.solid) {
         const opacity = state.settings.solidOpacity;
         const boundary = state.settings.solidBoundary;
@@ -633,10 +670,8 @@ function drawARFrame() {
         oCtx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
         
         if (side === 'left') {
-            // Left neglect -> Darken RIGHT side (healthy side)
             oCtx.fillRect(splitX, 0, targetWidth - splitX, targetHeight);
         } else {
-            // Right neglect -> Darken LEFT side (healthy side)
             oCtx.fillRect(0, 0, splitX, targetHeight);
         }
     }
@@ -648,12 +683,10 @@ function drawARFrame() {
         
         let grad;
         if (side === 'left') {
-            // Left neglect -> Darken RIGHT side. Gradient starts dark at right edge and fades going left.
             const startX = targetWidth;
             const endX = targetWidth - (targetWidth * gradWidth);
             grad = oCtx.createLinearGradient(startX, 0, endX, 0);
             
-            // Enhanced opacity curve (Color Stops) to make the gradient denser
             grad.addColorStop(0, `rgba(0, 0, 0, ${maxOpacity})`);
             grad.addColorStop(0.3, `rgba(0, 0, 0, ${maxOpacity * 0.95})`);
             grad.addColorStop(0.6, `rgba(0, 0, 0, ${maxOpacity * 0.6})`);
@@ -662,12 +695,10 @@ function drawARFrame() {
             oCtx.fillStyle = grad;
             oCtx.fillRect(endX, 0, targetWidth - endX, targetHeight);
         } else {
-            // Right neglect -> Darken LEFT side. Gradient starts dark at left edge and fades going right.
             const startX = 0;
             const endX = targetWidth * gradWidth;
             grad = oCtx.createLinearGradient(startX, 0, endX, 0);
             
-            // Enhanced opacity curve (Color Stops) to make the gradient denser
             grad.addColorStop(0, `rgba(0, 0, 0, ${maxOpacity})`);
             grad.addColorStop(0.3, `rgba(0, 0, 0, ${maxOpacity * 0.95})`);
             grad.addColorStop(0.6, `rgba(0, 0, 0, ${maxOpacity * 0.6})`);
@@ -694,11 +725,9 @@ function drawARFrame() {
     ctx.clearRect(0, 0, cWidth, cHeight);
     
     if (state.activeModes.arSplit) {
-        // Render identical left & right images for HMD / VR head mount goggles
         ctx.drawImage(offscreenCanvas, 0, 0, targetWidth, targetHeight, 0, 0, cWidth / 2, cHeight);
         ctx.drawImage(offscreenCanvas, 0, 0, targetWidth, targetHeight, cWidth / 2, 0, cWidth / 2, cHeight);
     } else {
-        // Standard full-screen render
         ctx.drawImage(offscreenCanvas, 0, 0, targetWidth, targetHeight, 0, 0, cWidth, cHeight);
     }
 }

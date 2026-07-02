@@ -138,6 +138,13 @@ body, html {
     margin-top: 2px;
 }
 
+.panel-guide {
+    font-size: 0.75rem;
+    color: var(--accent-teal);
+    margin-top: 6px;
+    font-weight: 500;
+}
+
 .panel-content {
     overflow-y: auto;
     padding: 16px 24px 24px;
@@ -416,6 +423,10 @@ input:checked + .slider-round:before {
     grid-template-columns: 1.4fr 1fr;
     gap: 12px;
     margin-top: 8px;
+}
+
+.actions-group.three-buttons {
+    grid-template-columns: 1.5fr 1.1fr 1fr;
 }
 
 .icon-btn {
