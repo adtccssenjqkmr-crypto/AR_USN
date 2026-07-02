@@ -27,8 +27,13 @@
         <video id="video-feed" autoplay playsinline muted></video>
         <canvas id="ar-canvas"></canvas>
         
+        <!-- Double Tap Toast Notification -->
+        <div id="double-tap-toast" class="toast-message">
+            💡 画面のダブルタップで設定を非表示/表示できます
+        </div>
+        
         <!-- UI Overlay -->
-        <header class="app-header">
+        <header id="app-header" class="app-header">
             <h1 class="app-title">USN Support AR</h1>
             <button id="toggle-panel-btn" class="icon-btn" aria-label="設定パネルを切り替える">
                 <span class="btn-icon">⚙️</span>
@@ -46,6 +51,7 @@
                 <!-- Global Config -->
                 <section class="config-section">
                     <h3 class="section-title">基本設定</h3>
+                    
                     <div class="control-group">
                         <label for="neglect-side" class="control-label">無視側（ターゲット空間）</label>
                         <div class="segmented-control">
@@ -54,6 +60,21 @@
                             <input type="radio" id="side-right" name="neglect-side" value="right">
                             <label for="side-right">右側 (Right)</label>
                         </div>
+                    </div>
+
+                    <div class="control-group flex-row">
+                        <label for="mode-ar-split" class="control-label">左右分割（ARゴーグル用）</label>
+                        <label class="switch">
+                            <input type="checkbox" id="mode-ar-split">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+
+                    <div class="control-group">
+                        <label for="camera-select" class="control-label">使用するカメラ</label>
+                        <select id="camera-select" class="styled-select">
+                            <option value="">検出中...</option>
+                        </select>
                     </div>
                 </section>
 
@@ -69,7 +90,7 @@
                     <div class="mode-options collapsible">
                         <div class="control-group">
                             <div class="slider-header">
-                                <label for="solid-opacity" class="control-label">暗転の不透明度</label>
+                                <label for="solid-opacity" class="control-label">健側の暗転不透明度</label>
                                 <span id="solid-opacity-val" class="value-display">50%</span>
                             </div>
                             <input type="range" id="solid-opacity" min="10" max="100" value="50" class="styled-range">
@@ -89,7 +110,7 @@
                     <div class="mode-options collapsible">
                         <div class="control-group">
                             <div class="slider-header">
-                                <label for="gradient-width" class="control-label">グラデーション幅</label>
+                                <label for="gradient-width" class="control-label">グラデーション幅（画面全体）</label>
                                 <span id="gradient-width-val" class="value-display">50%</span>
                             </div>
                             <input type="range" id="gradient-width" min="10" max="100" value="50" class="styled-range">
@@ -153,12 +174,11 @@
                                 <label for="shift-offset" class="control-label">視点のズレ位置</label>
                                 <span id="shift-offset-val" class="value-display">中央</span>
                             </div>
-                            <!-- -100 (左限界) 〜 +100 (右限界) の範囲 -->
                             <input type="range" id="shift-offset" min="-100" max="100" value="0" class="styled-range">
                         </div>
                         <div class="control-group">
                             <div class="slider-header">
-                                <label for="shift-zoom" class="control-label">映像ズーム率（切り出し）</label>
+                                <label for="shift-zoom" class="control-label">映像ズーム率</label>
                                 <span id="shift-zoom-val" class="value-display">1.3x</span>
                             </div>
                             <input type="range" id="shift-zoom" min="11" max="20" value="13" class="styled-range">
@@ -169,7 +189,7 @@
                 <!-- Action Controls -->
                 <div class="actions-group">
                     <button id="camera-toggle-btn" class="btn btn-primary">カメラを起動</button>
-                    <button id="reset-settings-btn" class="btn btn-secondary">設定をリセット</button>
+                    <button id="reset-settings-btn" class="btn btn-secondary">リセット</button>
                 </div>
             </div>
         </main>
@@ -177,7 +197,7 @@
         <!-- Custom PWA Install Banner -->
         <div id="pwa-install-banner" class="pwa-banner hidden">
             <p>ホーム画面に追加してアプリとして利用できます</p>
-            <button id="pwa-install-btn" class="btn btn-primary btn-sm">追加する</button>
+            <button id="pwa-install-btn" class="btn btn-primary btn-sm">追加</button>
             <button id="pwa-close-btn" class="icon-btn btn-sm">✕</button>
         </div>
 
