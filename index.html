@@ -73,7 +73,7 @@
                     <div class="control-group">
                         <label for="camera-select" class="control-label">使用するカメラ</label>
                         <select id="camera-select" class="styled-select">
-                            <option value="">検出中...</option>
+                            <option value="">背面カメラ (自動選択)</option>
                         </select>
                     </div>
                 </section>
@@ -94,6 +94,13 @@
                                 <span id="solid-opacity-val" class="value-display">50%</span>
                             </div>
                             <input type="range" id="solid-opacity" min="10" max="100" value="50" class="styled-range">
+                        </div>
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="solid-boundary" class="control-label">暗転の境界位置</label>
+                                <span id="solid-boundary-val" class="value-display">50% (中央)</span>
+                            </div>
+                            <input type="range" id="solid-boundary" min="10" max="90" value="50" class="styled-range">
                         </div>
                     </div>
                 </section>
