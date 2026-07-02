@@ -46,7 +46,7 @@ body, html {
 }
 
 #video-feed {
-    display: none; /* Hidden, processed through Canvas */
+    display: none; /* Processed via Canvas */
 }
 
 #ar-canvas {
@@ -72,6 +72,7 @@ body, html {
     z-index: 10;
     background: linear-gradient(to bottom, rgba(9, 13, 22, 0.8) 0%, rgba(9, 13, 22, 0) 100%);
     pointer-events: none;
+    transition: var(--transition-smooth);
 }
 
 .app-title {
@@ -141,7 +142,6 @@ body, html {
     overflow-y: auto;
     padding: 16px 24px 24px;
     flex: 1;
-    /* Custom Scrollbar for panel content */
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
@@ -196,11 +196,46 @@ body, html {
     margin-bottom: 0;
 }
 
+.control-group.flex-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.control-group.flex-row .control-label {
+    margin-bottom: 0;
+}
+
 .control-label {
     font-size: 0.85rem;
     color: var(--text-secondary);
     display: block;
     margin-bottom: 8px;
+}
+
+/* Styled Select Menu */
+.styled-select {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--border-radius-sm);
+    padding: 10px 14px;
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    outline: none;
+    transition: var(--transition-smooth);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg fill='white' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+
+.styled-select:focus {
+    border-color: var(--accent-teal);
+    box-shadow: 0 0 10px var(--accent-teal-glow);
 }
 
 /* Segmented Control (Radio button group) */
@@ -409,6 +444,49 @@ input:checked + .slider-round:before {
     font-size: 1.1rem;
 }
 
+/* --- Floating Toast Notification --- */
+.toast-message {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(9, 13, 22, 0.85);
+    border: 1px solid var(--accent-teal);
+    border-radius: 30px;
+    padding: 10px 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: fade-in-out 6s forwards;
+    text-align: center;
+    white-space: nowrap;
+}
+
+@keyframes fade-in-out {
+    0% { opacity: 0; transform: translate(-50%, -20px); }
+    8% { opacity: 1; transform: translate(-50%, 0); }
+    90% { opacity: 1; transform: translate(-50%, 0); }
+    100% { opacity: 0; transform: translate(-50%, -20px); }
+}
+
+/* --- UI Hidden States for AR immersion --- */
+.ui-hidden .control-panel {
+    transform: translateX(-50%) translateY(calc(100% + 40px)) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.ui-hidden .app-header {
+    transform: translateY(-100%) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 /* --- Camera & UI State Modifier classes --- */
 .camera-error {
     position: absolute;
@@ -532,6 +610,10 @@ input:checked + .slider-round:before {
     
     .control-panel.hidden {
         transform: translateX(calc(100% + 40px)) translateY(0);
+    }
+    
+    .ui-hidden .control-panel {
+        transform: translateX(calc(100% + 40px)) translateY(0) !important;
     }
     
     .app-header {

@@ -4,7 +4,8 @@ const state = {
         solid: false,
         gradient: false,
         arrows: false,
-        shift: false
+        shift: false,
+        arSplit: false // Side-by-side AR split screen
     },
     settings: {
         neglectSide: 'left', // 'left' or 'right'
@@ -14,13 +15,18 @@ const state = {
         arrowSpeed: 3,       // 1 to 5
         arrowSize: 40,       // 20 to 80 px
         arrowOpacity: 0.6,   // 0.1 to 1.0
-        shiftOffset: 0,      // -100 to 100 (left to right)
+        shiftOffset: 0,      // -100 to 100
         shiftZoom: 1.3       // 1.1 to 2.0
     },
     videoStream: null,
     animationFrameId: null,
-    arrowsList: []
+    arrowsList: [],
+    selectedDeviceId: null
 };
+
+// --- Offscreen Canvas for Rendering (Saves memory and enables perfect split-screen synchronization) ---
+const offscreenCanvas = document.createElement('canvas');
+const oCtx = offscreenCanvas.getContext('2d');
 
 // --- Arrow Object Definition ---
 class VisualArrow {
@@ -38,14 +44,13 @@ class VisualArrow {
 
     reset(canvasWidth, isInitial = false) {
         const side = state.settings.neglectSide;
-        // Stagger initial positions, otherwise start off-screen
         const offset = isInitial ? (canvasWidth * this.offsetDelay) : 0;
 
         if (side === 'left') {
-            // Move right to left (guide eyes to the left neglect side)
+            // Left neglect -> guide attention to the left. Flow Right to Left (◀)
             this.x = canvasWidth + 50 + offset;
         } else {
-            // Move left to right (guide eyes to the right neglect side)
+            // Right neglect -> guide attention to the right. Flow Left to Right (▶)
             this.x = -50 - offset;
         }
     }
@@ -56,7 +61,6 @@ class VisualArrow {
         }
 
         const side = state.settings.neglectSide;
-        // Base speed times the scale factor
         const step = (1.5 + speedScale * 1.5); 
 
         if (side === 'left') {
@@ -81,11 +85,10 @@ class VisualArrow {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
-        // Add subtle neon glow
+        // Add neon glow
         ctx.shadowColor = 'rgba(14, 213, 201, 0.6)';
         ctx.shadowBlur = 8;
 
-        // Render direction character
         const char = side === 'left' ? '◀' : '▶';
         const y = canvasHeight * this.yPercent;
         
@@ -105,6 +108,8 @@ const elements = {
     cameraError: document.getElementById('camera-error'),
     errorMessage: document.getElementById('error-message'),
     retryCameraBtn: document.getElementById('retry-camera-btn'),
+    cameraSelect: document.getElementById('camera-select'),
+    modeArSplit: document.getElementById('mode-ar-split'),
     
     // Config controls
     sideLeft: document.getElementById('side-left'),
@@ -139,17 +144,16 @@ const elements = {
     pwaCloseBtn: document.getElementById('pwa-close-btn')
 };
 
-// Initialize Canvas context
 const ctx = elements.canvas.getContext('2d');
 
 // --- Initialize Flowing Arrows ---
 function initArrows() {
     state.arrowsList = [
-        new VisualArrow(0.25, 0.0), // Top line
-        new VisualArrow(0.50, 0.45), // Middle line
-        new VisualArrow(0.75, 0.25), // Bottom line
-        new VisualArrow(0.35, 0.7),  // Mid-top
-        new VisualArrow(0.65, 0.15)  // Mid-bottom
+        new VisualArrow(0.25, 0.0),  // Line 1
+        new VisualArrow(0.50, 0.45), // Line 2 (center)
+        new VisualArrow(0.75, 0.25), // Line 3
+        new VisualArrow(0.38, 0.70), // Line 4
+        new VisualArrow(0.62, 0.15)  // Line 5
     ];
 }
 
@@ -182,11 +186,26 @@ function setupEventListeners() {
     // Neglect Side change
     const handleSideChange = (e) => {
         state.settings.neglectSide = e.target.value;
-        // Reset all arrows positions to match the new direction
-        state.arrowsList.forEach(arrow => arrow.reset(elements.canvas.width));
+        const targetWidth = state.activeModes.arSplit ? elements.canvas.width / 2 : elements.canvas.width;
+        state.arrowsList.forEach(arrow => arrow.reset(targetWidth));
     };
     elements.sideLeft.addEventListener('change', handleSideChange);
     elements.sideRight.addEventListener('change', handleSideChange);
+
+    // Split Screen mode
+    elements.modeArSplit.addEventListener('change', (e) => {
+        state.activeModes.arSplit = e.target.checked;
+        updateOffscreenSize();
+    });
+
+    // Camera device select dropdown
+    elements.cameraSelect.addEventListener('change', (e) => {
+        state.selectedDeviceId = e.target.value;
+        if (state.videoStream) {
+            // Hot reload camera stream
+            startCamera();
+        }
+    });
 
     // Mode Toggle Bindings
     elements.modeSolidEnable.addEventListener('change', (e) => {
@@ -201,7 +220,8 @@ function setupEventListeners() {
         state.activeModes.arrows = e.target.checked;
         toggleSectionActive('section-arrows', e.target.checked);
         if (e.target.checked) {
-            state.arrowsList.forEach(arrow => arrow.reset(elements.canvas.width));
+            const targetWidth = state.activeModes.arSplit ? elements.canvas.width / 2 : elements.canvas.width;
+            state.arrowsList.forEach(arrow => arrow.reset(targetWidth));
         }
     });
     elements.modeShiftEnable.addEventListener('change', (e) => {
@@ -250,12 +270,10 @@ function setupEventListeners() {
     elements.shiftOffset.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
         state.settings.shiftOffset = val;
-        
         let direction = '';
         if (val < 0) direction = `左へ ${Math.abs(val)}`;
         else if (val > 0) direction = `右へ ${val}`;
         else direction = '中央';
-        
         elements.shiftOffsetVal.textContent = direction;
     });
     elements.shiftZoom.addEventListener('input', (e) => {
@@ -266,6 +284,9 @@ function setupEventListeners() {
 
     // Resize Event
     window.addEventListener('resize', resizeCanvas);
+
+    // Double-tap or Double-click on Canvas to Hide Settings Panel
+    setupDoubleTapTrigger();
 }
 
 function toggleSectionActive(sectionId, isActive) {
@@ -277,18 +298,120 @@ function toggleSectionActive(sectionId, isActive) {
     }
 }
 
+// --- Double Tap Trigger implementation ---
+function setupDoubleTapTrigger() {
+    let lastTap = 0;
+    
+    // Touch interface
+    elements.canvas.addEventListener('touchstart', (e) => {
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastTap;
+        
+        if (tapLength < 300 && tapLength > 0) {
+            toggleUIVisibility();
+            e.preventDefault(); // Prevent double tap zoom
+        }
+        lastTap = currentTime;
+    }, { passive: false });
+    
+    // Mouse interface (PC)
+    elements.canvas.addEventListener('dblclick', () => {
+        toggleUIVisibility();
+    });
+}
+
+function toggleUIVisibility() {
+    const isHidden = document.body.classList.toggle('ui-hidden');
+    
+    // Show toast feedback
+    const toast = document.getElementById('double-tap-toast');
+    if (toast) {
+        toast.textContent = isHidden ? '👁️ 設定を隠しました（ダブルタップで再表示）' : '⚙️ 設定を表示しました';
+        toast.style.animation = 'none';
+        toast.offsetHeight; // trigger reflow
+        toast.style.animation = 'fade-in-out 4s forwards';
+    }
+}
+
 // --- Canvas Resizing ---
 function resizeCanvas() {
     const displayWidth = window.innerWidth;
     const displayHeight = window.innerHeight;
     
-    // Align canvas drawing buffer with its display size
     if (elements.canvas.width !== displayWidth || elements.canvas.height !== displayHeight) {
         elements.canvas.width = displayWidth;
         elements.canvas.height = displayHeight;
+        updateOffscreenSize();
+    }
+}
+
+function updateOffscreenSize() {
+    const w = state.activeModes.arSplit ? elements.canvas.width / 2 : elements.canvas.width;
+    const h = elements.canvas.height;
+    
+    offscreenCanvas.width = w;
+    offscreenCanvas.height = h;
+    
+    state.arrowsList.forEach(arrow => arrow.reset(w, true));
+}
+
+// --- Device Enumeration for Cameras ---
+async function enumerateCameras() {
+    try {
+        // Enforce media query permission before listing devices so labels are accessible
+        await navigator.mediaDevices.getUserMedia({ video: true });
         
-        // Re-align arrow initial placements based on new dimensions
-        state.arrowsList.forEach(arrow => arrow.reset(displayWidth, true));
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        elements.cameraSelect.innerHTML = '';
+        
+        if (videoDevices.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = "";
+            opt.textContent = "カメラが見つかりません";
+            elements.cameraSelect.appendChild(opt);
+            return;
+        }
+
+        // Try to identify and select ultra-wide angle back camera by default
+        let defaultDeviceId = null;
+        
+        // Keywords for ultra wide lenses
+        const ultraWideKeywords = ['ultra', 'super', '0.5x', 'wide', '広角', '超広角', 'fisheye'];
+        
+        videoDevices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            
+            const label = device.label || `カメラ ${index + 1}`;
+            option.textContent = label;
+            elements.cameraSelect.appendChild(option);
+            
+            // Check if label matches ultra-wide, prioritize if it is a back camera
+            const lowerLabel = label.toLowerCase();
+            const isBack = lowerLabel.includes('back') || lowerLabel.includes('rear') || lowerLabel.includes('背面') || lowerLabel.includes('環境') || lowerLabel.includes('out');
+            
+            if (isBack && ultraWideKeywords.some(kw => lowerLabel.includes(kw))) {
+                defaultDeviceId = device.deviceId;
+            }
+        });
+        
+        // Fallback to first back camera, then first available camera if no wide angle found
+        if (!defaultDeviceId) {
+            const firstBackCam = videoDevices.find(d => {
+                const l = d.label.toLowerCase();
+                return l.includes('back') || l.includes('rear') || l.includes('背面') || l.includes('環境') || l.includes('out');
+            });
+            defaultDeviceId = firstBackCam ? firstBackCam.deviceId : videoDevices[0].deviceId;
+        }
+
+        state.selectedDeviceId = defaultDeviceId;
+        elements.cameraSelect.value = defaultDeviceId;
+    } catch (e) {
+        console.warn('Could not enumerate camera devices:', e);
+        // Clean default fallback in case enumeration fails (e.g. permission denied beforehand)
+        elements.cameraSelect.innerHTML = '<option value="">背面カメラ（自動選択）</option>';
     }
 }
 
@@ -297,25 +420,26 @@ async function startCamera() {
     elements.cameraToggleBtn.textContent = '接続中...';
     elements.cameraToggleBtn.disabled = true;
 
+    // Build constraints. If we selected a device ID, use it. Otherwise, request environment facingMode.
     const constraints = {
         video: {
-            facingMode: 'environment', // Prefer back camera
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
+            deviceId: state.selectedDeviceId ? { exact: state.selectedDeviceId } : undefined,
+            facingMode: state.selectedDeviceId ? undefined : 'environment',
+            width: { ideal: 1920 }, // High-res target for wide view
+            height: { ideal: 1080 }
         },
         audio: false
     };
 
     try {
         if (state.videoStream) {
-            stopCamera();
+            state.videoStream.getTracks().forEach(track => track.stop());
         }
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         state.videoStream = stream;
         elements.video.srcObject = stream;
         
-        // Wait for video metadata to load so we know the video dimensions
         elements.video.onloadedmetadata = () => {
             elements.video.play();
             resizeCanvas();
@@ -329,7 +453,6 @@ async function startCamera() {
     } catch (error) {
         console.error('Camera initialization failed:', error);
         showCameraError(error);
-        
         elements.cameraToggleBtn.textContent = 'カメラを起動';
         elements.cameraToggleBtn.disabled = false;
     }
@@ -348,11 +471,10 @@ function stopCamera() {
 
     elements.video.srcObject = null;
     
-    // Clear canvas to dark screen
+    // Clear canvas
     ctx.fillStyle = '#090d16';
     ctx.fillRect(0, 0, elements.canvas.width, elements.canvas.height);
     
-    // Draw placeholder text
     ctx.fillStyle = '#94a3b8';
     ctx.font = "16px 'Plus Jakarta Sans', sans-serif";
     ctx.textAlign = 'center';
@@ -382,7 +504,6 @@ function showCameraError(err) {
 function startRenderLoop() {
     function render() {
         if (!state.videoStream) return;
-        
         drawARFrame();
         state.animationFrameId = requestAnimationFrame(render);
     }
@@ -399,68 +520,64 @@ function drawARFrame() {
     const vWidth = video.videoWidth;
     const vHeight = video.videoHeight;
     
-    ctx.clearRect(0, 0, cWidth, cHeight);
+    // Define the dimensions of a single screen (split or full)
+    const targetWidth = state.activeModes.arSplit ? cWidth / 2 : cWidth;
+    const targetHeight = cHeight;
+    
+    // Render on offscreen canvas first
+    oCtx.clearRect(0, 0, targetWidth, targetHeight);
 
-    // 1. Render Base Frame with optional Shift / Zoom
+    // 1. Render Camera Stream (Cover Fit / Perspective Shift)
     if (state.activeModes.shift) {
         const zoom = state.settings.shiftZoom;
-        const cAspect = cWidth / cHeight;
+        const cAspect = targetWidth / targetHeight;
         
-        // Calculate crop bounds for cover fit
         let sWidth = vWidth;
         let sHeight = vHeight;
         
         if (cAspect > vWidth / vHeight) {
-            // Canvas is wider than video aspect
             sWidth = vWidth;
             sHeight = vWidth / cAspect;
         } else {
-            // Canvas is taller than video aspect
             sWidth = vHeight * cAspect;
             sHeight = vHeight;
         }
         
-        // Apply zoom modifier
         sWidth = sWidth / zoom;
         sHeight = sHeight / zoom;
         
-        // Compute base centered coordinates
         const sxMid = (vWidth - sWidth) / 2;
         const syMid = (vHeight - sHeight) / 2;
         
-        // Compute horizontal shift offset
         const maxShift = (vWidth - sWidth) / 2;
-        // ShiftOffset value is -100 (left shift) to 100 (right shift)
-        // If left shift (-100), we want to view more left side of the camera feed (decrease sx)
+        // ShiftOffset: -100 (left shift) to 100 (right shift)
         const shiftX = (state.settings.shiftOffset / 100) * maxShift;
         
         let sx = sxMid + shiftX;
         let sy = syMid;
         
-        // Clamp bounds to prevent empty borders
         sx = Math.max(0, Math.min(vWidth - sWidth, sx));
         
-        // Draw the cropped & shifted frame
-        ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, cWidth, cHeight);
+        oCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
     } else {
-        // Normal cover rendering (no shifting)
-        renderCoverVideo(video, vWidth, vHeight, cWidth, cHeight);
+        renderCoverVideo(oCtx, video, vWidth, vHeight, targetWidth, targetHeight);
     }
 
-    // 2. Render Overlay Effects
+    // 2. Render Overlay Rehabilitation Effects on Offscreen Context
     const side = state.settings.neglectSide;
 
     // A: Solid Darkening Overlay
+    // NOTE: For rehabilitation, we want to darken the NON-neglected (healthy) side to force attention to the neglected side.
     if (state.activeModes.solid) {
         const opacity = state.settings.solidOpacity;
-        ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
+        oCtx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
         
         if (side === 'left') {
-            // Darken left half
-            ctx.fillRect(0, 0, cWidth / 2, cHeight);
+            // Left neglect -> Darken RIGHT side (healthy side)
+            oCtx.fillRect(targetWidth / 2, 0, targetWidth / 2, targetHeight);
         } else {
-            // Darken right half
-            ctx.fillRect(cWidth / 2, 0, cWidth / 2, cHeight);
+            // Right neglect -> Darken LEFT side (healthy side)
+            oCtx.fillRect(0, 0, targetWidth / 2, targetHeight);
         }
     }
 
@@ -471,23 +588,25 @@ function drawARFrame() {
         
         let grad;
         if (side === 'left') {
-            // Fade from dark (left) to transparent (moving right)
-            const endX = cWidth * gradWidth;
-            grad = ctx.createLinearGradient(0, 0, endX, 0);
+            // Left neglect -> Darken RIGHT side. Gradient starts dark at right edge and fades going left.
+            const startX = targetWidth;
+            const endX = targetWidth - (targetWidth * gradWidth);
+            grad = oCtx.createLinearGradient(startX, 0, endX, 0);
             grad.addColorStop(0, `rgba(0, 0, 0, ${maxOpacity})`);
             grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
             
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, endX, cHeight);
+            oCtx.fillStyle = grad;
+            oCtx.fillRect(endX, 0, targetWidth - endX, targetHeight);
         } else {
-            // Fade from dark (right) to transparent (moving left)
-            const startX = cWidth * (1 - gradWidth);
-            grad = ctx.createLinearGradient(cWidth, 0, startX, 0);
+            // Right neglect -> Darken LEFT side. Gradient starts dark at left edge and fades going right.
+            const startX = 0;
+            const endX = targetWidth * gradWidth;
+            grad = oCtx.createLinearGradient(startX, 0, endX, 0);
             grad.addColorStop(0, `rgba(0, 0, 0, ${maxOpacity})`);
             grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
             
-            ctx.fillStyle = grad;
-            ctx.fillRect(startX, 0, cWidth - startX, cHeight);
+            oCtx.fillStyle = grad;
+            oCtx.fillRect(0, 0, endX, targetHeight);
         }
     }
 
@@ -498,43 +617,53 @@ function drawARFrame() {
         const opacity = state.settings.arrowOpacity;
         
         state.arrowsList.forEach(arrow => {
-            arrow.update(cWidth, speed);
-            arrow.draw(ctx, cHeight, size, opacity);
+            arrow.update(targetWidth, speed);
+            arrow.draw(oCtx, targetHeight, size, opacity);
         });
+    }
+
+    // 3. Project Offscreen Rendering onto Main Screen
+    ctx.clearRect(0, 0, cWidth, cHeight);
+    
+    if (state.activeModes.arSplit) {
+        // Render identical left & right images for HMD / VR head mount goggles
+        ctx.drawImage(offscreenCanvas, 0, 0, targetWidth, targetHeight, 0, 0, cWidth / 2, cHeight);
+        ctx.drawImage(offscreenCanvas, 0, 0, targetWidth, targetHeight, cWidth / 2, 0, cWidth / 2, cHeight);
+    } else {
+        // Standard full-screen render
+        ctx.drawImage(offscreenCanvas, 0, 0, targetWidth, targetHeight, 0, 0, cWidth, cHeight);
     }
 }
 
 // Utility function to draw video matching background-size: cover
-function renderCoverVideo(img, imgW, imgH, containerW, containerH) {
+function renderCoverVideo(targetCtx, img, imgW, imgH, containerW, containerH) {
     const imgRatio = imgW / imgH;
     const containerRatio = containerW / containerH;
     
     let sx, sy, sWidth, sHeight;
     
     if (containerRatio > imgRatio) {
-        // Container is wider than image (cropped top/bottom)
         sWidth = imgW;
         sHeight = imgW / containerRatio;
         sx = 0;
         sy = (imgH - sHeight) / 2;
     } else {
-        // Container is taller than image (cropped sides)
         sWidth = imgH * containerRatio;
         sHeight = imgH;
         sx = (imgW - sWidth) / 2;
         sy = 0;
     }
     
-    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, containerW, containerH);
+    targetCtx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, containerW, containerH);
 }
 
 // --- Settings Operations ---
 function resetToDefaults() {
-    // Reset state values
     state.activeModes.solid = false;
     state.activeModes.gradient = false;
     state.activeModes.arrows = false;
     state.activeModes.shift = false;
+    state.activeModes.arSplit = false;
     
     state.settings.neglectSide = 'left';
     state.settings.solidOpacity = 0.5;
@@ -546,9 +675,9 @@ function resetToDefaults() {
     state.settings.shiftOffset = 0;
     state.settings.shiftZoom = 1.3;
 
-    // Reset UI Elements
     elements.sideLeft.checked = true;
     elements.sideRight.checked = false;
+    elements.modeArSplit.checked = false;
     
     elements.modeSolidEnable.checked = false;
     elements.solidOpacity.value = 50;
@@ -578,36 +707,34 @@ function resetToDefaults() {
     elements.shiftZoomVal.textContent = '1.3x';
     toggleSectionActive('section-shift', false);
     
-    // Reset arrows
-    state.arrowsList.forEach(arrow => arrow.reset(elements.canvas.width));
+    // Auto-reselect first camera
+    if (elements.cameraSelect.options.length > 0) {
+        state.selectedDeviceId = elements.cameraSelect.options[0].value;
+        elements.cameraSelect.selectedIndex = 0;
+    }
+    
+    updateOffscreenSize();
+    if (state.videoStream) {
+        startCamera();
+    }
 }
 
 // --- PWA Installation Logic ---
 let deferredPrompt;
 
 window.addEventListener('beforeinstallprompt', (e) => {
-    // Prevent Chrome 67 and earlier from automatically showing the prompt
     e.preventDefault();
-    // Stash the event so it can be triggered later.
     deferredPrompt = e;
-    // Update UI to notify the user they can install the PWA
     elements.pwaInstallBanner.classList.remove('hidden');
 });
 
 elements.pwaInstallBtn.addEventListener('click', async () => {
     if (!deferredPrompt) return;
     
-    // Show the install prompt
     deferredPrompt.prompt();
-    
-    // Wait for the user to respond to the prompt
     const { outcome } = await deferredPrompt.userChoice;
     console.log(`PWA install prompt outcome: ${outcome}`);
-    
-    // We've used the prompt, and can't use it again
     deferredPrompt = null;
-    
-    // Hide the banner
     elements.pwaInstallBanner.classList.add('hidden');
 });
 
@@ -616,11 +743,13 @@ elements.pwaCloseBtn.addEventListener('click', () => {
 });
 
 // App Initialization
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initArrows();
     setupEventListeners();
     
-    // Pre-draw stopped screen placeholder
+    // Enumerate cameras first, then initialize canvas sizes and stop screen placeholders
+    await enumerateCameras();
+    
     resizeCanvas();
     stopCamera();
 });
