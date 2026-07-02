@@ -1,0 +1,18 @@
+{
+  "name": "USN Support AR - 半側空間無視リハビリ支援",
+  "short_name": "USN AR",
+  "description": "スマートフォンカメラを用いて半側空間無視（USN）の訓練や生活補助を行うARアプリケーションです。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "app_icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>USN Support AR - 半側空間無視リハビリ支援</title>
+    <meta name="description" content="スマートフォンカメラを用いた半側空間無視（USN）リハビリ支援ARアプリケーション。無視側の視覚注意を引くための各種エフェクト（暗転、グラデーション、矢印誘導、視野シフト）をリアルタイムに重ね合わせます。">
+    
+    <!-- PWA meta tags -->
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link class="apple-touch-icon" rel="apple-touch-icon" href="app_icon.png">
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Fullscreen AR Canvas -->
+    <div class="app-container">
+        <video id="video-feed" autoplay playsinline muted></video>
+        <canvas id="ar-canvas"></canvas>
+        
+        <!-- UI Overlay -->
+        <header class="app-header">
+            <h1 class="app-title">USN Support AR</h1>
+            <button id="toggle-panel-btn" class="icon-btn" aria-label="設定パネルを切り替える">
+                <span class="btn-icon">⚙️</span>
+            </button>
+        </header>
+
+        <!-- Controls Panel -->
+        <main id="control-panel" class="control-panel visible">
+            <div class="panel-header">
+                <h2>リハビリ設定</h2>
+                <p class="panel-subtitle">患者の症状に合わせて調節してください</p>
+            </div>
+            
+            <div class="panel-content">
+                <!-- Global Config -->
+                <section class="config-section">
+                    <h3 class="section-title">基本設定</h3>
+                    <div class="control-group">
+                        <label for="neglect-side" class="control-label">無視側（ターゲット空間）</label>
+                        <div class="segmented-control">
+                            <input type="radio" id="side-left" name="neglect-side" value="left" checked>
+                            <label for="side-left">左側 (Left)</label>
+                            <input type="radio" id="side-right" name="neglect-side" value="right">
+                            <label for="side-right">右側 (Right)</label>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Mode 1: Solid Darkening -->
+                <section class="config-section mode-section" id="section-solid">
+                    <div class="section-header-toggle">
+                        <h3 class="section-title">1. 空間暗転</h3>
+                        <label class="switch">
+                            <input type="checkbox" id="mode-solid-enable">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    <div class="mode-options collapsible">
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="solid-opacity" class="control-label">暗転の不透明度</label>
+                                <span id="solid-opacity-val" class="value-display">50%</span>
+                            </div>
+                            <input type="range" id="solid-opacity" min="10" max="100" value="50" class="styled-range">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Mode 2: Gradient Darkening -->
+                <section class="config-section mode-section" id="section-gradient">
+                    <div class="section-header-toggle">
+                        <h3 class="section-title">2. グラデーション暗転</h3>
+                        <label class="switch">
+                            <input type="checkbox" id="mode-gradient-enable">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    <div class="mode-options collapsible">
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="gradient-width" class="control-label">グラデーション幅</label>
+                                <span id="gradient-width-val" class="value-display">50%</span>
+                            </div>
+                            <input type="range" id="gradient-width" min="10" max="100" value="50" class="styled-range">
+                        </div>
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="gradient-opacity" class="control-label">最大不透明度</label>
+                                <span id="gradient-opacity-val" class="value-display">80%</span>
+                            </div>
+                            <input type="range" id="gradient-opacity" min="20" max="100" value="80" class="styled-range">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Mode 3: Flowing Arrows -->
+                <section class="config-section mode-section" id="section-arrows">
+                    <div class="section-header-toggle">
+                        <h3 class="section-title">3. 視線誘導（矢印）</h3>
+                        <label class="switch">
+                            <input type="checkbox" id="mode-arrows-enable">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    <div class="mode-options collapsible">
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="arrow-speed" class="control-label">流れる速度</label>
+                                <span id="arrow-speed-val" class="value-display">普通</span>
+                            </div>
+                            <input type="range" id="arrow-speed" min="1" max="5" value="3" class="styled-range">
+                        </div>
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="arrow-size" class="control-label">矢印のサイズ</label>
+                                <span id="arrow-size-val" class="value-display">中</span>
+                            </div>
+                            <input type="range" id="arrow-size" min="20" max="80" value="40" class="styled-range">
+                        </div>
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="arrow-opacity" class="control-label">不透明度</label>
+                                <span id="arrow-opacity-val" class="value-display">60%</span>
+                            </div>
+                            <input type="range" id="arrow-opacity" min="10" max="100" value="60" class="styled-range">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Mode 4: View Shift -->
+                <section class="config-section mode-section" id="section-shift">
+                    <div class="section-header-toggle">
+                        <h3 class="section-title">4. 視野シフト</h3>
+                        <label class="switch">
+                            <input type="checkbox" id="mode-shift-enable">
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    <div class="mode-options collapsible">
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="shift-offset" class="control-label">視点のズレ位置</label>
+                                <span id="shift-offset-val" class="value-display">中央</span>
+                            </div>
+                            <!-- -100 (左限界) 〜 +100 (右限界) の範囲 -->
+                            <input type="range" id="shift-offset" min="-100" max="100" value="0" class="styled-range">
+                        </div>
+                        <div class="control-group">
+                            <div class="slider-header">
+                                <label for="shift-zoom" class="control-label">映像ズーム率（切り出し）</label>
+                                <span id="shift-zoom-val" class="value-display">1.3x</span>
+                            </div>
+                            <input type="range" id="shift-zoom" min="11" max="20" value="13" class="styled-range">
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Action Controls -->
+                <div class="actions-group">
+                    <button id="camera-toggle-btn" class="btn btn-primary">カメラを起動</button>
+                    <button id="reset-settings-btn" class="btn btn-secondary">設定をリセット</button>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Custom PWA Install Banner -->
+        <div id="pwa-install-banner" class="pwa-banner hidden">
+            <p>ホーム画面に追加してアプリとして利用できます</p>
+            <button id="pwa-install-btn" class="btn btn-primary btn-sm">追加する</button>
+            <button id="pwa-close-btn" class="icon-btn btn-sm">✕</button>
+        </div>
+
+        <div id="camera-error" class="camera-error hidden">
+            <div class="error-card">
+                <span class="error-icon">⚠️</span>
+                <h3>カメラアクセスエラー</h3>
+                <p id="error-message">カメラの使用が許可されていないか、対応するカメラが見つかりません。設定を確認し、HTTPS接続でお試しください。</p>
+                <button id="retry-camera-btn" class="btn btn-primary">再試行</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script src="app.js"></script>
+    <script>
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('Service Worker registered successfully.', reg.scope))
+                    .catch(err => console.log('Service Worker registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>
