@@ -25,7 +25,7 @@ const state = {
     selectedDeviceId: "" // Empty means "Auto select back camera"
 };
 
-// --- Offscreen Canvas for Rendering (Saves memory and enables perfect split-screen synchronization) ---
+// --- Offscreen Canvas for Rendering ---
 const offscreenCanvas = document.createElement('canvas');
 const oCtx = offscreenCanvas.getContext('2d');
 
@@ -46,9 +46,6 @@ class VisualArrow {
     reset(canvasWidth, isInitial = false) {
         const side = state.settings.neglectSide;
         
-        // Distribute coordinates randomly to stagger their entries.
-        // If it's the initial setup, spread them across the screen.
-        // If it's a reset (passed edge), start them at randomized distances offscreen.
         let offset = 0;
         if (isInitial) {
             offset = Math.random() * canvasWidth;
@@ -57,10 +54,8 @@ class VisualArrow {
         }
 
         if (side === 'left') {
-            // Left neglect -> guide attention to the left. Flow Right to Left (◀)
             this.x = canvasWidth + offset;
         } else {
-            // Right neglect -> guide attention to the right. Flow Left to Right (▶)
             this.x = -offset;
         }
     }
@@ -72,10 +67,7 @@ class VisualArrow {
 
         const side = state.settings.neglectSide;
         
-        // Speed adjustment requested by user:
-        // Set new "極遅" (1) to match the previous v3 "速い" (1.2 px/f).
-        // Set new "極速" (5) to match twice the previous v3 "極速" (1.5 * 2 = 3.0 px/f).
-        // Interpolated steps:
+        // Speed stepping:
         // Level 1: 1.2px/f, 2: 1.65px/f, 3: 2.1px/f, 4: 2.55px/f, 5: 3.0px/f
         const step = (1.2 + (speedScale - 1) * 0.45);
 
@@ -101,7 +93,6 @@ class VisualArrow {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
-        // Neon glow
         ctx.shadowColor = 'rgba(14, 213, 201, 0.6)';
         ctx.shadowBlur = 8;
 
@@ -128,7 +119,6 @@ const elements = {
     cameraSelect: document.getElementById('camera-select'),
     modeArSplit: document.getElementById('mode-ar-split'),
     
-    // Config controls
     sideLeft: document.getElementById('side-left'),
     sideRight: document.getElementById('side-right'),
     
@@ -178,13 +168,11 @@ function initArrows() {
 
 // --- Setup Event Listeners ---
 function setupEventListeners() {
-    // Panel Toggle
     elements.togglePanelBtn.addEventListener('click', () => {
         elements.controlPanel.classList.toggle('hidden');
         elements.togglePanelBtn.classList.toggle('panel-closed');
     });
 
-    // Camera Toggle
     elements.cameraToggleBtn.addEventListener('click', () => {
         if (state.videoStream) {
             stopCamera();
@@ -193,12 +181,10 @@ function setupEventListeners() {
         }
     });
 
-    // Fullscreen Toggle
     elements.fullscreenBtn.addEventListener('click', () => {
         toggleFullscreen();
     });
 
-    // Listen to native fullscreen changes to update UI state
     document.addEventListener('fullscreenchange', () => {
         updateFullscreenButtonUI();
     });
@@ -206,16 +192,13 @@ function setupEventListeners() {
         updateFullscreenButtonUI();
     });
 
-    // Retry Camera
     elements.retryCameraBtn.addEventListener('click', () => {
         elements.cameraError.classList.add('hidden');
         startCamera();
     });
 
-    // Reset Settings
     elements.resetSettingsBtn.addEventListener('click', resetToDefaults);
 
-    // Neglect Side change
     const handleSideChange = (e) => {
         state.settings.neglectSide = e.target.value;
         const targetWidth = state.activeModes.arSplit ? elements.canvas.width / 2 : elements.canvas.width;
@@ -224,13 +207,11 @@ function setupEventListeners() {
     elements.sideLeft.addEventListener('change', handleSideChange);
     elements.sideRight.addEventListener('change', handleSideChange);
 
-    // Split Screen mode
     elements.modeArSplit.addEventListener('change', (e) => {
         state.activeModes.arSplit = e.target.checked;
         updateOffscreenSize();
     });
 
-    // Camera device select dropdown
     elements.cameraSelect.addEventListener('change', (e) => {
         state.selectedDeviceId = e.target.value;
         if (state.videoStream) {
@@ -238,7 +219,6 @@ function setupEventListeners() {
         }
     });
 
-    // Mode Toggle Bindings
     elements.modeSolidEnable.addEventListener('change', (e) => {
         state.activeModes.solid = e.target.checked;
         toggleSectionActive('section-solid', e.target.checked);
@@ -260,7 +240,6 @@ function setupEventListeners() {
         toggleSectionActive('section-shift', e.target.checked);
     });
 
-    // Sliders Bindings
     elements.solidOpacity.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
         state.settings.solidOpacity = val / 100;
@@ -318,10 +297,7 @@ function setupEventListeners() {
         elements.shiftZoomVal.textContent = `${val.toFixed(1)}x`;
     });
 
-    // Resize Event
     window.addEventListener('resize', resizeCanvas);
-
-    // Double-tap or Double-click on Canvas to Hide Settings Panel
     setupDoubleTapTrigger();
 }
 
@@ -340,14 +316,12 @@ function toggleFullscreen() {
     const isFull = document.fullscreenElement || document.webkitFullscreenElement;
 
     if (!isFull) {
-        // Request fullscreen
         if (docEl.requestFullscreen) {
             docEl.requestFullscreen().catch(err => console.warn(err));
-        } else if (docEl.webkitRequestFullscreen) { /* iOS / Safari support */
+        } else if (docEl.webkitRequestFullscreen) {
             docEl.webkitRequestFullscreen();
         }
     } else {
-        // Exit fullscreen
         if (document.exitFullscreen) {
             document.exitFullscreen();
         } else if (document.webkitExitFullscreen) {
@@ -373,19 +347,17 @@ function updateFullscreenButtonUI() {
 function setupDoubleTapTrigger() {
     let lastTap = 0;
     
-    // Touch interface
     elements.canvas.addEventListener('touchstart', (e) => {
         const currentTime = new Date().getTime();
         const tapLength = currentTime - lastTap;
         
         if (tapLength < 300 && tapLength > 0) {
             toggleUIVisibility();
-            e.preventDefault(); // Prevent double tap zoom
+            e.preventDefault();
         }
         lastTap = currentTime;
     }, { passive: false });
     
-    // Mouse interface (PC)
     elements.canvas.addEventListener('dblclick', () => {
         toggleUIVisibility();
     });
@@ -394,7 +366,6 @@ function setupDoubleTapTrigger() {
 function toggleUIVisibility() {
     const isHidden = document.body.classList.toggle('ui-hidden');
     
-    // Show toast feedback
     const toast = document.getElementById('double-tap-toast');
     if (toast) {
         toast.textContent = isHidden ? '👁️ 設定を隠しました（ダブルタップで再表示）' : '⚙️ 設定を表示しました';
@@ -429,16 +400,14 @@ function updateOffscreenSize() {
 // --- Device Enumeration for Cameras ---
 async function enumerateCameras() {
     try {
-        // Enforce temporary media permission first so labels are visible
         const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        tempStream.getTracks().forEach(t => t.stop()); // Stop immediately
+        tempStream.getTracks().forEach(t => t.stop());
         
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         
         elements.cameraSelect.innerHTML = '';
         
-        // Add "Auto back camera" default option
         const autoOpt = document.createElement('option');
         autoOpt.value = "";
         autoOpt.textContent = "背面カメラ (自動選択)";
@@ -448,7 +417,6 @@ async function enumerateCameras() {
             return;
         }
 
-        // Keywords for ultra wide lenses
         const ultraWideKeywords = ['ultra', 'super', '0.5x', 'wide', '広角', '超広角', 'fisheye'];
         let autoSelectId = "";
         
@@ -460,7 +428,6 @@ async function enumerateCameras() {
             option.textContent = label;
             elements.cameraSelect.appendChild(option);
             
-            // Prioritize ultra-wide camera automatically as default back camera
             const lowerLabel = label.toLowerCase();
             const isBack = lowerLabel.includes('back') || lowerLabel.includes('rear') || lowerLabel.includes('背面') || lowerLabel.includes('環境') || lowerLabel.includes('out');
             
@@ -469,7 +436,6 @@ async function enumerateCameras() {
             }
         });
         
-        // If a specific wide-angle ID is found, store it as standard target for the "Auto" choice
         if (autoSelectId) {
             state.selectedDeviceId = autoSelectId;
             elements.cameraSelect.value = autoSelectId;
@@ -511,6 +477,39 @@ async function startCamera() {
         state.videoStream = stream;
         elements.video.srcObject = stream;
         
+        // --- Adjusting Focus Distance and Zoom constraints on active video track ---
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+            try {
+                // Check device capabilities (focusMode, focusDistance, zoom)
+                const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+                const advancedConstraints = {};
+                
+                // 1. Focus Control: Force manual mode with maximum distance (infinity focus)
+                // Prevents autofocus hunting/pulsing issues.
+                if (capabilities.focusMode && capabilities.focusMode.includes('manual')) {
+                    advancedConstraints.focusMode = 'manual';
+                    if (capabilities.focusDistance) {
+                        advancedConstraints.focusDistance = capabilities.focusDistance.max;
+                    }
+                }
+                
+                // 2. Zoom Control: Force minimum zoom ratio (forces ultra-wide perspective if available)
+                // Prevents automatic cropping/swapping to closer telephoto lenses.
+                if (capabilities.zoom) {
+                    advancedConstraints.zoom = capabilities.zoom.min;
+                }
+                
+                // Apply constraints if supported
+                if (Object.keys(advancedConstraints).length > 0) {
+                    console.log('Applying advanced track constraints:', advancedConstraints);
+                    await track.applyConstraints({ advanced: [advancedConstraints] });
+                }
+            } catch (constraintErr) {
+                console.warn('Advanced focus/zoom constraints not applicable on this track:', constraintErr);
+            }
+        }
+
         let isStarted = false;
         const triggerPlay = () => {
             if (isStarted) return;
@@ -564,7 +563,6 @@ function stopCamera() {
 
     elements.video.srcObject = null;
     
-    // Clear canvas
     ctx.fillStyle = '#090d16';
     ctx.fillRect(0, 0, elements.canvas.width, elements.canvas.height);
     
@@ -732,7 +730,6 @@ function drawARFrame() {
     }
 }
 
-// Utility function to draw video matching background-size: cover
 function renderCoverVideo(targetCtx, img, imgW, imgH, containerW, containerH) {
     const imgRatio = imgW / imgH;
     const containerRatio = containerW / containerH;
@@ -807,7 +804,6 @@ function resetToDefaults() {
     elements.shiftZoomVal.textContent = '1.3x';
     toggleSectionActive('section-shift', false);
     
-    // Auto-reselect first auto camera option
     state.selectedDeviceId = "";
     elements.cameraSelect.value = "";
     
